@@ -1,0 +1,15 @@
+package com.vantage.dialer.common.events;
+
+public enum EventType {
+  CALL_CREATED,
+  CUSTOMER_RINGING,
+  CUSTOMER_ANSWERED,
+  AGENT_DIALING,
+  AGENT_RINGING,
+  AGENT_ANSWERED,
+  CALL_BRIDGED,
+  CALL_COMPLETED,
+  CALL_FAILED,
+  RECORDING_READY,
+  CALL_DIALING
+}
