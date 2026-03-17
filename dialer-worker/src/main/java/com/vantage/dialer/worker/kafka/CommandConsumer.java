@@ -43,6 +43,22 @@ public class CommandConsumer {
                     agentId,
                     agentChannel
             );
+            return;
+        }
+
+        if (command.getCommandType() == CommandType.DIAL_AGENT) {
+            String agentId = command.getPayload().get("agentId");
+            String agentChannel = command.getPayload().get("agentChannel");
+
+            System.out.println("[WORKER] DIAL_AGENT session=" + command.getCallSessionId()
+                    + " agentId=" + agentId
+                    + " agentChannel=" + agentChannel);
+
+            outboundCallService.dialAgent(
+                    command.getCallSessionId(),
+                    agentId,
+                    agentChannel
+            );
         }
     }
 }

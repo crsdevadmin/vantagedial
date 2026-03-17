@@ -1,5 +1,6 @@
 package com.vantage.dialer.worker.service;
 
+import com.vantage.dialer.common.events.EventType;
 import com.vantage.dialer.worker.core.CallSession;
 import com.vantage.dialer.worker.core.CallSessionRegistry;
 import com.vantage.dialer.worker.core.TelephonyProviderRouter;
@@ -46,5 +47,15 @@ public class OutboundCallService {
             sessionRegistry.remove(callSessionId);
             throw ex;
         }
+    }
+
+    public void dialAgent(String callSessionId, String agentId, String agentChannel) {
+        CallSession session = sessionRegistry.get(callSessionId)
+                .orElseThrow(() -> new IllegalArgumentException("Unknown call session: " + callSessionId));
+
+        session.setAgentId(agentId);
+        session.setAgentChannel(agentChannel);
+        eventPublisherService.publish(session, EventType.AGENT_DIALING);
+        providerRouter.resolve(session.getProvider()).startAgentLeg(session);
     }
 }

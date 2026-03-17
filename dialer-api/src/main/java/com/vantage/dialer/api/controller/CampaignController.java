@@ -1,5 +1,6 @@
 package com.vantage.dialer.api.controller;
 
+import com.vantage.dialer.api.campaign.DialMode;
 import com.vantage.dialer.api.campaign.CampaignEngine;
 import com.vantage.dialer.api.campaign.Lead;
 import com.vantage.dialer.api.campaign.LeadStore;
@@ -39,9 +40,18 @@ public class CampaignController {
     public String start(@PathVariable String campaignId,
                         @RequestParam(defaultValue = "5") int maxConcurrentCalls,
                         @RequestParam(defaultValue = "2") int callsPerSecond,
-                        @RequestParam(defaultValue = "EXOTEL") String provider) {
+                        @RequestParam(defaultValue = "EXOTEL") String provider,
+                        @RequestParam(defaultValue = "PROGRESSIVE") String mode,
+                        @RequestParam(defaultValue = "1.5") double predictiveRatio) {
 
-        engine.startCampaign(campaignId, maxConcurrentCalls, callsPerSecond, provider);
+        engine.startCampaign(
+                campaignId,
+                maxConcurrentCalls,
+                callsPerSecond,
+                provider,
+                DialMode.from(mode),
+                predictiveRatio
+        );
 
         return "campaign started: " + campaignId;
     }

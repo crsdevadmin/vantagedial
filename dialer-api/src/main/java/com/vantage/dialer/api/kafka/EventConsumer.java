@@ -3,6 +3,7 @@ package com.vantage.dialer.api.kafka;
 import com.vantage.dialer.api.agent.AgentStore;
 import com.vantage.dialer.api.campaign.LeadStatus;
 import com.vantage.dialer.api.campaign.LeadStore;
+import com.vantage.dialer.api.service.PredictiveDialerCoordinator;
 import com.vantage.dialer.common.events.EventType;
 import com.vantage.dialer.common.events.StandardEvent;
 import com.vantage.dialer.common.kafka.Topics;
@@ -14,10 +15,14 @@ public class EventConsumer {
 
     private final LeadStore leadStore;
     private final AgentStore agentStore;
+    private final PredictiveDialerCoordinator predictiveDialerCoordinator;
 
-    public EventConsumer(LeadStore leadStore, AgentStore agentStore) {
+    public EventConsumer(LeadStore leadStore,
+                         AgentStore agentStore,
+                         PredictiveDialerCoordinator predictiveDialerCoordinator) {
         this.leadStore = leadStore;
         this.agentStore = agentStore;
+        this.predictiveDialerCoordinator = predictiveDialerCoordinator;
     }
 
     @KafkaListener(topics = Topics.EVENTS, groupId = "dialer-api-events")
@@ -38,9 +43,13 @@ public class EventConsumer {
         if (event.getEventType() == EventType.CALL_CREATED) {
             leadStore.updateStatus(campaignId, leadId, LeadStatus.IN_PROGRESS);
 
+        } else if (event.getEventType() == EventType.CUSTOMER_ANSWERED) {
+            predictiveDialerCoordinator.queueAnsweredCall(event);
+
         } else if (event.getEventType() == EventType.CALL_COMPLETED) {
             leadStore.updateStatus(campaignId, leadId, LeadStatus.COMPLETED);
             releaseAgent(agentId);
+            predictiveDialerCoordinator.dispatchWaitingCalls(campaignId);
 
         } else if (event.getEventType() == EventType.CALL_FAILED) {
             var leads = leadStore.getLeads(campaignId);
@@ -55,6 +64,7 @@ public class EventConsumer {
                 }
             }
             releaseAgent(agentId);
+            predictiveDialerCoordinator.dispatchWaitingCalls(campaignId);
         }
 
         System.out.println("[API] event=" + event.getEventType()

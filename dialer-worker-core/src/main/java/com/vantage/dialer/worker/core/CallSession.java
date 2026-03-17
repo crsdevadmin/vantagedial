@@ -10,8 +10,8 @@ public class CallSession {
     private final String campaignId;
     private final String leadId;
     private final String customerNumber;
-    private final String agentId;
-    private final String agentChannel;
+    private volatile String agentId;
+    private volatile String agentChannel;
     private final Map<String, String> actionOwners = new ConcurrentHashMap<>();
 
     private volatile String customerChannel;
@@ -62,8 +62,16 @@ public class CallSession {
         return agentId;
     }
 
+    public void setAgentId(String agentId) {
+        this.agentId = agentId;
+    }
+
     public String getAgentChannel() {
         return agentChannel;
+    }
+
+    public void setAgentChannel(String agentChannel) {
+        this.agentChannel = agentChannel;
     }
 
     public Map<String, String> getActionOwners() {

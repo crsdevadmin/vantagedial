@@ -12,6 +12,7 @@ import org.asteriskjava.manager.action.OriginateAction;
 import org.asteriskjava.manager.response.ManagerResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -33,6 +34,7 @@ public class AsteriskService {
     private volatile boolean shutdown;
     private ManagerConnection managerConnection;
 
+    @Autowired
     public AsteriskService(AsteriskProperties properties) {
         this(properties, configuredProperties -> {
             ManagerConnectionFactory factory = new ManagerConnectionFactory(

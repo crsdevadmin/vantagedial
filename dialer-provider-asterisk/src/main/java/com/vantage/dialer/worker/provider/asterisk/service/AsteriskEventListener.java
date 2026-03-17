@@ -88,7 +88,9 @@ public class AsteriskEventListener implements ManagerEventListener {
                 session.setCustomerAnswered(true);
                 eventPublisher.publish(session, EventType.CUSTOMER_ANSWERED);
 
-                if (!session.isAgentDialRequested()) {
+                if (!session.isAgentDialRequested()
+                        && session.getAgentChannel() != null
+                        && !session.getAgentChannel().isBlank()) {
                     eventPublisher.publish(session, EventType.AGENT_DIALING);
                     providerRouter.resolve(session.getProvider()).startAgentLeg(session);
                 }
