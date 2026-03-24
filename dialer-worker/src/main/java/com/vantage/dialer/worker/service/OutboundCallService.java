@@ -26,6 +26,8 @@ public class OutboundCallService {
                       String provider,
                       String campaignId,
                       String leadId,
+                      String callMode,
+                      String ivrFlowId,
                       String agentId,
                       String agentChannel) {
         CallSession session = new CallSession(
@@ -34,6 +36,8 @@ public class OutboundCallService {
                 campaignId,
                 leadId,
                 customerNumber,
+                callMode,
+                ivrFlowId,
                 agentId,
                 agentChannel
         );

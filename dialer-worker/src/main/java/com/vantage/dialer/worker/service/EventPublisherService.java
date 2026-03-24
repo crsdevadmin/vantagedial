@@ -40,6 +40,8 @@ public class EventPublisherService implements CallEventPublisher {
         payload.put("campaignId", session.getCampaignId());
         payload.put("leadId", session.getLeadId());
         payload.put("customerNumber", session.getCustomerNumber());
+        payload.put("callMode", session.getCallMode());
+        payload.put("ivrFlowId", session.getIvrFlowId());
         payload.put("agentId", session.getAgentId());
         payload.put("agentChannel", session.getAgentChannel());
         payload.put("customerChannel", session.getCustomerChannel());

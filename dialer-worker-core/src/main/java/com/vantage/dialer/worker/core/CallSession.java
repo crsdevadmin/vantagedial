@@ -10,6 +10,8 @@ public class CallSession {
     private final String campaignId;
     private final String leadId;
     private final String customerNumber;
+    private final String callMode;
+    private final String ivrFlowId;
     private volatile String agentId;
     private volatile String agentChannel;
     private final Map<String, String> actionOwners = new ConcurrentHashMap<>();
@@ -27,6 +29,8 @@ public class CallSession {
                        String campaignId,
                        String leadId,
                        String customerNumber,
+                       String callMode,
+                       String ivrFlowId,
                        String agentId,
                        String agentChannel) {
         this.callSessionId = callSessionId;
@@ -34,6 +38,8 @@ public class CallSession {
         this.campaignId = campaignId;
         this.leadId = leadId;
         this.customerNumber = customerNumber;
+        this.callMode = callMode;
+        this.ivrFlowId = ivrFlowId;
         this.agentId = agentId;
         this.agentChannel = agentChannel;
     }
@@ -56,6 +62,14 @@ public class CallSession {
 
     public String getCustomerNumber() {
         return customerNumber;
+    }
+
+    public String getCallMode() {
+        return callMode;
+    }
+
+    public String getIvrFlowId() {
+        return ivrFlowId;
     }
 
     public String getAgentId() {

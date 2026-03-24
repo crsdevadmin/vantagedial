@@ -1,0 +1,26 @@
+[Unit]
+Description=Vantage Dialer Worker
+After=network.target kafka.service
+Requires=kafka.service
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/vantagedial
+Environment="SPRING_KAFKA_BOOTSTRAP_SERVERS=127.0.0.1:9092"
+Environment="ASTERISK_AMI_HOST=10.0.0.10"
+Environment="ASTERISK_AMI_PORT=5038"
+Environment="ASTERISK_AMI_USERNAME=admin"
+Environment="ASTERISK_AMI_PASSWORD=change-me"
+Environment="ASTERISK_AMI_ENDPOINT=vivphone-endpoint"
+Environment="ASTERISK_AMI_DIAL_PREFIX=91"
+Environment="ASTERISK_AMI_CONTEXT=from-internal"
+Environment="ASTERISK_AMI_EXTENSION=1001"
+Environment="ASTERISK_AMI_PRIORITY=1"
+ExecStart=/usr/bin/mvn -f /home/ubuntu/vantagedial/dialer-worker/pom.xml spring-boot:run
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

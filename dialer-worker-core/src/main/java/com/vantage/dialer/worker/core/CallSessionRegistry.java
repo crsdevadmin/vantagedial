@@ -38,7 +38,12 @@ public class CallSessionRegistry {
     }
 
     public Optional<CallSession> findByChannel(String channel) {
-        String sessionId = sessionIdByChannel.get(normalizeChannel(channel));
+        String normalizedChannel = normalizeChannel(channel);
+        if (normalizedChannel == null) {
+            return Optional.empty();
+        }
+
+        String sessionId = sessionIdByChannel.get(normalizedChannel);
         return sessionId == null ? Optional.empty() : get(sessionId);
     }
 

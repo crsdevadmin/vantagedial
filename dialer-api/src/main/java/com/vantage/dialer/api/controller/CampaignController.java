@@ -4,6 +4,9 @@ import com.vantage.dialer.api.campaign.DialMode;
 import com.vantage.dialer.api.campaign.CampaignEngine;
 import com.vantage.dialer.api.campaign.Lead;
 import com.vantage.dialer.api.campaign.LeadStore;
+import com.vantage.dialer.api.dto.CampaignRequest;
+import com.vantage.dialer.api.dto.CampaignResponse;
+import com.vantage.dialer.api.service.CampaignCatalogService;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
@@ -15,17 +18,19 @@ public class CampaignController {
 
     private final LeadStore leadStore;
     private final CampaignEngine engine;
+    private final CampaignCatalogService campaignCatalogService;
 
-    public CampaignController(LeadStore leadStore, CampaignEngine engine) {
+    public CampaignController(LeadStore leadStore,
+                              CampaignEngine engine,
+                              CampaignCatalogService campaignCatalogService) {
         this.leadStore = leadStore;
         this.engine = engine;
+        this.campaignCatalogService = campaignCatalogService;
     }
 
     @PostMapping
-    public Map<String, String> createCampaign() {
-        // in MVP we just generate an id
-        String campaignId = UUID.randomUUID().toString();
-        return Map.of("campaignId", campaignId);
+    public CampaignResponse createCampaign(@RequestBody(required = false) CampaignRequest request) {
+        return campaignCatalogService.createCampaign(request == null ? new CampaignRequest() : request);
     }
 
     @PostMapping("/{campaignId}/leads")
@@ -52,6 +57,14 @@ public class CampaignController {
                 DialMode.from(mode),
                 predictiveRatio
         );
+        campaignCatalogService.markRunning(
+                campaignId,
+                DialMode.from(mode),
+                provider,
+                maxConcurrentCalls,
+                callsPerSecond,
+                predictiveRatio
+        );
 
         return "campaign started: " + campaignId;
     }
@@ -59,6 +72,7 @@ public class CampaignController {
     @PostMapping("/{campaignId}/stop")
     public String stop(@PathVariable String campaignId) {
         engine.stopCampaign(campaignId);
+        campaignCatalogService.markStopped(campaignId);
         return "campaign stopped: " + campaignId;
     }
 }

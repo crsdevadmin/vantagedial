@@ -1,0 +1,5 @@
+; Ensure WebSocket and PJSIP modules required for WebRTC are loaded.
+load => res_http_websocket.so
+load => res_pjsip.so
+load => res_pjsip_transport_websocket.so
+load => res_pjsip_endpoint_identifier_ip.so

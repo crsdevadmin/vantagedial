@@ -8,6 +8,8 @@ public class CallRequest {
     private String agentId;
     private String agentChannel;
     private String provider;
+    private String ivrFlowId;
+    private String callMode;
 
     public CallRequest() {
     }
@@ -71,5 +73,21 @@ public class CallRequest {
 
     public void setProvider(String provider) {
         this.provider = provider;
+    }
+
+    public String getIvrFlowId() {
+        return ivrFlowId;
+    }
+
+    public void setIvrFlowId(String ivrFlowId) {
+        this.ivrFlowId = ivrFlowId;
+    }
+
+    public String getCallMode() {
+        return callMode;
+    }
+
+    public void setCallMode(String callMode) {
+        this.callMode = callMode;
     }
 }

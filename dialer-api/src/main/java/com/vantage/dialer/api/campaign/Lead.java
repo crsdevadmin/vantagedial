@@ -39,6 +39,10 @@ public class Lead {
         return attempts;
     }
 
+    public void setAttempts(int attempts) {
+        this.attempts = attempts;
+    }
+
     public void incrementAttempts() {
         this.attempts++;
     }

@@ -1,0 +1,23 @@
+[Unit]
+Description=Vantage Dialer API
+After=network.target kafka.service postgresql.service
+Requires=kafka.service postgresql.service
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/vantagedial
+Environment="SPRING_DATASOURCE_URL=jdbc:postgresql://127.0.0.1:5432/vantagedial"
+Environment="SPRING_DATASOURCE_USERNAME=vantagedial"
+Environment="SPRING_DATASOURCE_PASSWORD=change-me"
+Environment="SPRING_DATASOURCE_DRIVER_CLASS_NAME=org.postgresql.Driver"
+Environment="SPRING_JPA_HIBERNATE_DDL_AUTO=update"
+Environment="SPRING_KAFKA_BOOTSTRAP_SERVERS=127.0.0.1:9092"
+Environment="APP_LOGGING_LEVEL=MODERATE"
+ExecStart=/usr/bin/mvn -f /home/ubuntu/vantagedial/dialer-api/pom.xml spring-boot:run
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

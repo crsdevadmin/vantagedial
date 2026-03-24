@@ -19,17 +19,22 @@ public class CommandConsumer {
     @KafkaListener(topics = Topics.COMMANDS, groupId = "dialer-worker")
     public void onCommand(CommandMessage command) {
 
-        if (command.getCommandType() == CommandType.START_CUSTOMER_CALL) {
+        if (command.getCommandType() == CommandType.START_CUSTOMER_CALL
+                || command.getCommandType() == CommandType.START_IVR_CALL) {
 
             String customerNumber = command.getPayload().get("customerNumber");
             String campaignId = command.getPayload().get("campaignId");
             String leadId = command.getPayload().get("leadId");
+            String callMode = command.getPayload().get("callMode");
+            String ivrFlowId = command.getPayload().get("ivrFlowId");
             String agentId = command.getPayload().get("agentId");
             String agentChannel = command.getPayload().get("agentChannel");
 
-            System.out.println("[WORKER] START_CUSTOMER_CALL session=" + command.getCallSessionId()
+            System.out.println("[WORKER] " + command.getCommandType() + " session=" + command.getCallSessionId()
                     + " campaignId=" + campaignId
                     + " leadId=" + leadId
+                    + " callMode=" + callMode
+                    + " ivrFlowId=" + ivrFlowId
                     + " agentId=" + agentId
                     + " agentChannel=" + agentChannel
                     + " number=" + customerNumber);
@@ -40,6 +45,8 @@ public class CommandConsumer {
                     command.getProvider(),
                     campaignId,
                     leadId,
+                    callMode,
+                    ivrFlowId,
                     agentId,
                     agentChannel
             );
