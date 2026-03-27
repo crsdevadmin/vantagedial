@@ -67,6 +67,20 @@ The UI expects:
 - SIP username
 - SIP password
 
+## Verify
+
+```bash
+npm test
+npm run build
+```
+
+The softphone adapter now has a regression test that covers:
+
+- duplicate session attachment being ignored
+- delayed cleanup from a finished call not clearing a newer active call
+
+These same UI checks also run in the repository CI workflow on pushes and pull requests.
+
 ## Integration direction
 
 - keep `calling-core` reusable
