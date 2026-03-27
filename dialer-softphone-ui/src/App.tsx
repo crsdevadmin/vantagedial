@@ -1568,7 +1568,7 @@ export default function App() {
             </p>
           </div>
           <div className={`status-pill ${snapshot.registrationState}`}>
-            {snapshot.registrationState.replaceAll("_", " ")}
+            {snapshot.registrationState.replace(/_/g, " ")}
           </div>
         </section>
 

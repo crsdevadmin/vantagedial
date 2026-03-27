@@ -5,3 +5,6 @@ target/
 .settings/
 .vscode/
 *.log
+dialer-softphone-ui/node_modules/
+dialer-softphone-ui/dist/
+*.tsbuildinfo

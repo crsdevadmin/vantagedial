@@ -13,6 +13,7 @@ export class JsSipAdapter implements SipAdapter {
   private ua: any | null = null;
   private session: any | null = null;
   private currentCall: CallSession | null = null;
+  private clearCurrentCallTimeout: number | null = null;
 
   async connect(config: SoftphoneConfig, publish: PublishFn): Promise<void> {
     if (!config.websocketUrl) {
@@ -57,6 +58,7 @@ export class JsSipAdapter implements SipAdapter {
   }
 
   async disconnect(): Promise<void> {
+    this.cancelPendingClear();
     try {
       this.session?.terminate();
     } catch {
@@ -131,6 +133,11 @@ export class JsSipAdapter implements SipAdapter {
   }
 
   private attachSession(session: any, direction: "incoming" | "outgoing"): void {
+    if (this.session === session) {
+      return;
+    }
+
+    this.cancelPendingClear();
     this.session = session;
     this.currentCall = {
       id: session.id ?? crypto.randomUUID(),
@@ -189,6 +196,9 @@ export class JsSipAdapter implements SipAdapter {
   }
 
   private finishCurrentCall(status: "ended" | "failed", errorMessage?: string): void {
+    const completedSession = this.session;
+    const completedCallId = this.currentCall?.id ?? null;
+
     if (this.currentCall) {
       this.currentCall = {
         ...this.currentCall,
@@ -200,9 +210,18 @@ export class JsSipAdapter implements SipAdapter {
       currentCall: this.currentCall
     });
 
-    window.setTimeout(() => {
+    this.cancelPendingClear();
+    this.clearCurrentCallTimeout = window.setTimeout(() => {
+      if (
+        this.session !== completedSession ||
+        (completedCallId !== null && this.currentCall?.id !== completedCallId)
+      ) {
+        return;
+      }
+
       this.session = null;
       this.currentCall = null;
+      this.clearCurrentCallTimeout = null;
       this.publish?.({
         currentCall: null,
         lastError: errorMessage ?? null
@@ -225,5 +244,12 @@ export class JsSipAdapter implements SipAdapter {
       session?.remote_identity?._uri?._user ||
       "Unknown"
     );
+  }
+
+  private cancelPendingClear(): void {
+    if (this.clearCurrentCallTimeout != null) {
+      window.clearTimeout(this.clearCurrentCallTimeout);
+      this.clearCurrentCallTimeout = null;
+    }
   }
 }
