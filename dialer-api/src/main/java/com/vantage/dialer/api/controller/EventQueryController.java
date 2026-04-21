@@ -3,6 +3,8 @@ package com.vantage.dialer.api.controller;
 import com.vantage.dialer.api.store.EventStore;
 import com.vantage.dialer.api.service.CallSessionService;
 import com.vantage.dialer.api.dto.CallTimelineBundleResponse;
+import com.vantage.dialer.api.dto.OperatorWrapUpRequest;
+import com.vantage.dialer.api.dto.OperatorWrapUpResponse;
 import com.vantage.dialer.api.service.ReportingService;
 import com.vantage.dialer.common.events.StandardEvent;
 import org.springframework.http.ResponseEntity;
@@ -48,5 +50,11 @@ public class EventQueryController {
         return callSessionService.getCallSession(callSessionId)
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
+    }
+
+    @PutMapping("/sessions/{callSessionId}/wrap-up")
+    public OperatorWrapUpResponse saveWrapUp(@PathVariable String callSessionId,
+                                             @RequestBody OperatorWrapUpRequest request) {
+        return callSessionService.saveOperatorWrapUp(callSessionId, request);
     }
 }

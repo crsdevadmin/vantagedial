@@ -42,6 +42,16 @@ public class CallSessionEntity {
 
     private String lastEventType;
     private Instant lastEventAt;
+    private String callDirection;
+    private String uiCallStatus;
+    private String operatorDisposition;
+    private String operatorPriority;
+    private Instant followUpAt;
+
+    @Column(length = 2000)
+    private String operatorNotes;
+
+    private Instant wrapUpUpdatedAt;
 
     @Column(nullable = false)
     private Instant createdAt;
@@ -143,6 +153,62 @@ public class CallSessionEntity {
 
     public void setLastEventAt(Instant lastEventAt) {
         this.lastEventAt = lastEventAt;
+    }
+
+    public String getCallDirection() {
+        return callDirection;
+    }
+
+    public void setCallDirection(String callDirection) {
+        this.callDirection = callDirection;
+    }
+
+    public String getUiCallStatus() {
+        return uiCallStatus;
+    }
+
+    public void setUiCallStatus(String uiCallStatus) {
+        this.uiCallStatus = uiCallStatus;
+    }
+
+    public String getOperatorDisposition() {
+        return operatorDisposition;
+    }
+
+    public void setOperatorDisposition(String operatorDisposition) {
+        this.operatorDisposition = operatorDisposition;
+    }
+
+    public String getOperatorPriority() {
+        return operatorPriority;
+    }
+
+    public void setOperatorPriority(String operatorPriority) {
+        this.operatorPriority = operatorPriority;
+    }
+
+    public Instant getFollowUpAt() {
+        return followUpAt;
+    }
+
+    public void setFollowUpAt(Instant followUpAt) {
+        this.followUpAt = followUpAt;
+    }
+
+    public String getOperatorNotes() {
+        return operatorNotes;
+    }
+
+    public void setOperatorNotes(String operatorNotes) {
+        this.operatorNotes = operatorNotes;
+    }
+
+    public Instant getWrapUpUpdatedAt() {
+        return wrapUpUpdatedAt;
+    }
+
+    public void setWrapUpUpdatedAt(Instant wrapUpUpdatedAt) {
+        this.wrapUpUpdatedAt = wrapUpUpdatedAt;
     }
 
     public Instant getCreatedAt() {

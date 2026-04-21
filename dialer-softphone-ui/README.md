@@ -10,6 +10,8 @@ This is the first standalone browser softphone module for testing and future reu
   - softphone client state management
 - `src/hooks`
   - React integration
+- `src/backendSessionHistory.ts`
+  - local backend session history parsing, trimming, and copy-brief helpers
 - `src/App.tsx`
   - demo operator console with recent calls, search/filter queue controls, scheduled follow-up queue, wrap-up workspace, and activity feed
 
@@ -60,6 +62,48 @@ For real SIP/WebRTC mode:
 VITE_SOFTPHONE_MODE=jssip npm run dev
 ```
 
+To prefill the softphone from the dialer API customer configuration, start the UI
+with the API location and customer id:
+
+```bash
+VITE_API_BASE_URL=http://localhost:8081 VITE_CUSTOMER_ID=customer-a npm run dev
+```
+
+Then use **Load customer config** in Agent Login. The UI fetches
+`/customers/<customerId>` and applies the customer's SIP domain, WebSocket URL,
+API base URL, and default agent UI mode while leaving the agent password manual.
+If the API and UI run on different origins, set `APP_CORS_ALLOWED_ORIGINS` on
+`dialer-api` to include the softphone origin.
+
+When an operator saves wrap-up notes, the UI keeps the local history update and
+also syncs the disposition, notes, priority, and follow-up time to
+`PUT /outbound/sessions/<callSessionId>/wrap-up`. For backend-queued calls, the
+UI matches the local softphone call back to the backend session history first so
+wrap-up lands on the Vantage call session instead of an adapter-generated local
+call id.
+
+The dial pad also attempts to queue agent-assisted outbound calls through
+`POST /outbound/start` using the configured Campaign ID and `PJSIP/<username>`
+as the agent channel. If the API queue is unavailable, the UI falls back to the
+direct softphone dial path.
+Queued backend calls are tracked by polling `/outbound/sessions/<callSessionId>`
+until the session reaches a terminal state, and the latest backend status is shown
+beside the local softphone call state.
+Recent backend-queued sessions remain visible in the Backend Session History panel
+with focus, refresh, and copy actions, so operators can return to settled API
+sessions or copy session context for support/debugging after the active poll has
+moved on. The recent backend session list is also persisted locally across
+browser refreshes.
+The UI normalizes backend timestamp fields from either ISO strings or numeric
+epoch-second values before storing session history, so it can tolerate both
+Spring/Jackson `Instant` response shapes.
+
+Before a browser pass, you can run the API-side smoke workflow from the repo root:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File ops\smoke\softphone-integration-smoke.ps1
+```
+
 The UI expects:
 
 - SIP domain
@@ -74,10 +118,13 @@ npm test
 npm run build
 ```
 
-The softphone adapter now has a regression test that covers:
+The frontend tests cover:
 
-- duplicate session attachment being ignored
-- delayed cleanup from a finished call not clearing a newer active call
+- softphone adapter lifecycle regressions, including duplicate session attachment and delayed cleanup
+- customer configuration URL normalization and response mapping
+- outbound start and wrap-up API request mapping
+- backend timestamp normalization for ISO strings and numeric epoch-second values
+- backend session history sanitization, matching, trimming, and copy-brief helpers
 
 These same UI checks also run in the repository CI workflow on pushes and pull requests.
 

@@ -10,6 +10,7 @@ import com.vantage.dialer.api.dto.CustomerDeliveryCenterResponse;
 import com.vantage.dialer.api.dto.CustomerHealthResponse;
 import com.vantage.dialer.api.dto.CustomerOverviewResponse;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
@@ -32,6 +33,7 @@ public class CustomerDeliveryCenterService {
     public CustomerDeliveryCenterService(CustomerHealthService customerHealthService,
                                          CustomerOverviewService customerOverviewService,
                                          CustomerAccountCenterService customerAccountCenterService,
+                                         @Lazy
                                          CustomerArtifactCatalogService customerArtifactCatalogService,
                                          ObjectMapper objectMapper,
                                          @Value("${app.exports.directory:./exports}") String exportDirectory) {

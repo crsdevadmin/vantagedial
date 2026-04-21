@@ -1,6 +1,8 @@
 package com.vantage.dialer.api.service;
 
 import com.vantage.dialer.api.dto.CallSessionResponse;
+import com.vantage.dialer.api.dto.OperatorWrapUpRequest;
+import com.vantage.dialer.api.dto.OperatorWrapUpResponse;
 import com.vantage.dialer.api.persistence.model.CallSessionEntity;
 import com.vantage.dialer.api.persistence.repository.CallSessionRepository;
 import com.vantage.dialer.common.model.CallMode;
@@ -93,9 +95,49 @@ class CallSessionServiceTest {
         assertEquals("session-2", response.callSessionId());
         assertEquals("OUTBOUND_IVR", response.callMode());
         assertEquals("CALL_COMPLETED", response.lastEventType());
+        assertEquals("connected", response.operatorDisposition());
         assertEquals(2, campaignSessions.size());
         assertEquals("session-2", campaignSessions.get(0).callSessionId());
         assertEquals("lead-1", campaignSessions.get(1).leadId());
+    }
+
+    @Test
+    void saveOperatorWrapUpCreatesSoftphoneSessionWhenMissing() {
+        CallSessionRepository repository = mock(CallSessionRepository.class);
+        CallSessionService service = new CallSessionService(repository);
+        when(repository.findById("ui-call-1")).thenReturn(Optional.empty());
+        when(repository.save(any(CallSessionEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        OperatorWrapUpRequest request = new OperatorWrapUpRequest();
+        request.setCampaignId("softphone-campaign");
+        request.setCustomerNumber("+15551234567");
+        request.setAgentId("1001");
+        request.setCallDirection("outgoing");
+        request.setCallStatus("ended");
+        request.setDisposition("callback");
+        request.setNotes("Call back after lunch");
+        request.setPriority("high");
+        request.setFollowUpAt(Instant.parse("2026-04-20T10:00:00Z"));
+
+        OperatorWrapUpResponse response = service.saveOperatorWrapUp("ui-call-1", request);
+
+        ArgumentCaptor<CallSessionEntity> captor = ArgumentCaptor.forClass(CallSessionEntity.class);
+        verify(repository).save(captor.capture());
+        CallSessionEntity saved = captor.getValue();
+
+        assertEquals("ui-call-1", saved.getCallSessionId());
+        assertEquals("softphone-campaign", saved.getCampaignId());
+        assertEquals("SOFTPHONE", saved.getProvider());
+        assertEquals("AGENT_SOFTPHONE", saved.getCallMode());
+        assertEquals("ENDED", saved.getStatus());
+        assertEquals("OPERATOR_WRAP_UP", saved.getLastEventType());
+        assertEquals("callback", saved.getOperatorDisposition());
+        assertEquals("Call back after lunch", saved.getOperatorNotes());
+        assertEquals("high", saved.getOperatorPriority());
+        assertEquals(Instant.parse("2026-04-20T10:00:00Z"), saved.getFollowUpAt());
+        assertNotNull(saved.getWrapUpUpdatedAt());
+        assertEquals("softphone-campaign", response.campaignId());
+        assertEquals("callback", response.disposition());
     }
 
     private CallSessionEntity entity(String callSessionId,
@@ -119,6 +161,7 @@ class CallSessionServiceTest {
         entity.setStatus(status);
         entity.setLastEventType(lastEventType);
         entity.setLastEventAt(lastEventAt);
+        entity.setOperatorDisposition("connected");
         setField(entity, "createdAt", createdAt);
         return entity;
     }

@@ -1,5 +1,12 @@
 import { FormEvent, useEffect, useState } from "react";
 import {
+  buildBackendSessionBrief,
+  findBackendSessionForCall,
+  readBackendSessionHistory,
+  upsertBackendSession,
+  writeBackendSessionHistory
+} from "./backendSessionHistory";
+import {
   CallDisposition,
   CallPriority,
   CallSession,
@@ -8,11 +15,24 @@ import {
   ContactHandoffType,
   SoftphoneActivityItem
 } from "./calling-core/types";
+import { fetchCustomerSettings } from "./customerConfig";
 import { useSoftphone } from "./hooks/useSoftphone";
+import {
+  BackendCallSession,
+  fetchCallSession,
+  normalizeApiTimestamp,
+  saveWrapUp,
+  startOutboundCall
+} from "./softphoneApi";
 
 const SETTINGS_STORAGE_KEY = "vantage-softphone-settings";
 
 type StoredSettings = {
+  apiBaseUrl: string;
+  customerId: string;
+  customerName?: string;
+  agentUiMode?: string;
+  campaignId: string;
   server: string;
   sipServer: string;
   username: string;
@@ -74,7 +94,19 @@ type ContactRecommendation = {
   secondaryLabel?: string;
 };
 
+const terminalBackendStatuses = new Set([
+  "CALL_COMPLETED",
+  "CALL_FAILED",
+  "COMPLETED",
+  "ENDED",
+  "FAILED",
+  "WRAP_UP"
+]);
+
 const defaultSettings: StoredSettings = {
+  apiBaseUrl: import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8081",
+  customerId: import.meta.env.VITE_CUSTOMER_ID ?? "customer-a",
+  campaignId: import.meta.env.VITE_CAMPAIGN_ID ?? "softphone-console",
   server: "wss://asterisk.example.com/ws",
   sipServer: "asterisk.example.com",
   username: "1001"
@@ -196,6 +228,11 @@ function readStoredSettings(): StoredSettings {
 
     const parsed = JSON.parse(raw) as Partial<StoredSettings>;
     return {
+      apiBaseUrl: parsed.apiBaseUrl || defaultSettings.apiBaseUrl,
+      customerId: parsed.customerId || defaultSettings.customerId,
+      customerName: parsed.customerName,
+      agentUiMode: parsed.agentUiMode,
+      campaignId: parsed.campaignId || defaultSettings.campaignId,
       server: parsed.server || defaultSettings.server,
       sipServer: parsed.sipServer || defaultSettings.sipServer,
       username: parsed.username || defaultSettings.username
@@ -997,10 +1034,42 @@ function buildContactRecommendation(
   };
 }
 
+function isTerminalBackendSession(session: BackendCallSession): boolean {
+  return (
+    terminalBackendStatuses.has((session.status ?? "").toUpperCase()) ||
+    terminalBackendStatuses.has((session.lastEventType ?? "").toUpperCase())
+  );
+}
+
+function formatBackendSessionSummary(session: BackendCallSession): string {
+  const state = session.lastEventType || session.status || "queued";
+  const target = session.customerNumber ? ` for ${session.customerNumber}` : "";
+  return `${state.replace(/_/g, " ")}${target}`;
+}
+
 export default function App() {
   const { client, snapshot } = useSoftphone();
   const adapterMode = import.meta.env.VITE_SOFTPHONE_MODE ?? "mock";
-  const storedSettings = readStoredSettings();
+  const [storedSettings] = useState(readStoredSettings);
+  const [storedBackendSessionHistory] = useState(readBackendSessionHistory);
+  const [apiBaseUrl, setApiBaseUrl] = useState(storedSettings.apiBaseUrl);
+  const [customerId, setCustomerId] = useState(storedSettings.customerId);
+  const [customerName, setCustomerName] = useState(storedSettings.customerName ?? "");
+  const [agentUiMode, setAgentUiMode] = useState(storedSettings.agentUiMode ?? "");
+  const [campaignId, setCampaignId] = useState(storedSettings.campaignId);
+  const [configLoadState, setConfigLoadState] = useState<"idle" | "loading" | "loaded" | "failed">("idle");
+  const [configLoadMessage, setConfigLoadMessage] = useState("");
+  const [dialSyncState, setDialSyncState] = useState<"idle" | "queueing" | "queued" | "fallback" | "failed">("idle");
+  const [dialSyncMessage, setDialSyncMessage] = useState("");
+  const [queuedCallSessionId, setQueuedCallSessionId] = useState<string | null>(null);
+  const [backendCallSession, setBackendCallSession] = useState<BackendCallSession | null>(null);
+  const [backendCallPolling, setBackendCallPolling] = useState(false);
+  const [backendCallMessage, setBackendCallMessage] = useState("");
+  const [backendSessionHistory, setBackendSessionHistory] = useState<BackendCallSession[]>(
+    storedBackendSessionHistory
+  );
+  const [wrapUpSyncState, setWrapUpSyncState] = useState<"idle" | "syncing" | "synced" | "failed">("idle");
+  const [wrapUpSyncMessage, setWrapUpSyncMessage] = useState("");
   const [server, setServer] = useState(storedSettings.server);
   const [sipServer, setSipServer] = useState(storedSettings.sipServer);
   const [username, setUsername] = useState(storedSettings.username);
@@ -1199,12 +1268,25 @@ export default function App() {
     window.localStorage.setItem(
       SETTINGS_STORAGE_KEY,
       JSON.stringify({
+        apiBaseUrl,
+        customerId,
+        customerName: customerName || undefined,
+        agentUiMode: agentUiMode || undefined,
+        campaignId,
         server,
         sipServer,
         username
       } satisfies StoredSettings)
     );
-  }, [server, sipServer, username]);
+  }, [agentUiMode, apiBaseUrl, campaignId, customerId, customerName, server, sipServer, username]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    writeBackendSessionHistory(backendSessionHistory);
+  }, [backendSessionHistory]);
 
   useEffect(() => {
     if (!snapshot.currentCall?.startedAt) {
@@ -1217,6 +1299,50 @@ export default function App() {
     }, 1000);
     return () => window.clearInterval(interval);
   }, [snapshot.currentCall?.startedAt]);
+
+  useEffect(() => {
+    if (!queuedCallSessionId || !apiBaseUrl.trim() || !backendCallPolling) {
+      return;
+    }
+
+    let cancelled = false;
+    const activeApiBaseUrl = apiBaseUrl;
+    const activeCallSessionId = queuedCallSessionId;
+
+    async function refreshBackendCallSession() {
+      try {
+        const session = await fetchCallSession(activeApiBaseUrl, activeCallSessionId);
+        if (cancelled) {
+          return;
+        }
+
+        setBackendCallSession(session);
+        setBackendSessionHistory((current) => upsertBackendSession(current, session));
+        setBackendCallMessage(formatBackendSessionSummary(session));
+        if (isTerminalBackendSession(session)) {
+          setBackendCallPolling(false);
+        }
+      } catch (error) {
+        if (cancelled) {
+          return;
+        }
+
+        setBackendCallMessage(
+          error instanceof Error ? error.message : "Unable to refresh backend call state"
+        );
+      }
+    }
+
+    void refreshBackendCallSession();
+    const interval = window.setInterval(() => {
+      void refreshBackendCallSession();
+    }, 3000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [apiBaseUrl, backendCallPolling, queuedCallSessionId]);
 
   useEffect(() => {
     if (snapshot.recentCalls.length === 0) {
@@ -1272,21 +1398,169 @@ export default function App() {
     });
   }
 
+  async function handleLoadCustomerConfig() {
+    setConfigLoadState("loading");
+    setConfigLoadMessage("Loading customer connection profile...");
+
+    try {
+      const settings = await fetchCustomerSettings(apiBaseUrl, customerId);
+      if (settings.sipServer) {
+        setSipServer(settings.sipServer);
+      }
+      if (settings.websocketUrl) {
+        setServer(settings.websocketUrl);
+      }
+      if (settings.apiBaseUrl) {
+        setApiBaseUrl(settings.apiBaseUrl);
+      }
+
+      setCustomerId(settings.customerId);
+      setCustomerName(settings.customerName ?? settings.brandDisplayName ?? "");
+      setAgentUiMode(settings.agentUiMode ?? "");
+      setConfigLoadState("loaded");
+      setConfigLoadMessage(
+        settings.websocketUrl && settings.sipServer
+          ? "Customer SIP/WebRTC settings loaded. Enter the agent password, then register."
+          : "Customer profile loaded, but SIP/WebRTC fields are incomplete."
+      );
+    } catch (error) {
+      setConfigLoadState("failed");
+      setConfigLoadMessage(error instanceof Error ? error.message : "Unable to load customer config");
+    }
+  }
+
   function loadNumber(value: string) {
     setDialNumber(normalizeDestination(value));
   }
 
-  function handleSaveWrapUp() {
+  async function handleMakeCall() {
+    const destination = normalizeDestination(dialNumber);
+    if (!destination) {
+      return;
+    }
+
+    if (apiBaseUrl.trim()) {
+      setDialSyncState("queueing");
+      setDialSyncMessage("Queueing call through Vantage Dialer...");
+
+      try {
+        const queuedCall = await startOutboundCall(apiBaseUrl, {
+          customerNumber: destination,
+          campaignId,
+          agentId: username,
+          agentChannel: `PJSIP/${username}`
+        });
+        const queuedSession: BackendCallSession = {
+          callSessionId: queuedCall.callSessionId,
+          campaignId: queuedCall.campaignId ?? campaignId,
+          provider: queuedCall.provider,
+          customerNumber: queuedCall.customerNumber ?? destination,
+          agentId: queuedCall.agentId ?? username,
+          agentChannel: queuedCall.agentChannel,
+          callMode: queuedCall.callMode,
+          status: queuedCall.status,
+          lastEventType: "QUEUED"
+        };
+        setQueuedCallSessionId(queuedCall.callSessionId);
+        setBackendCallSession(queuedSession);
+        setBackendSessionHistory((current) => upsertBackendSession(current, queuedSession));
+        setBackendCallPolling(true);
+        setBackendCallMessage("Waiting for backend call progress...");
+        setDialSyncState("queued");
+        setDialSyncMessage(
+          `Queued ${queuedCall.callSessionId} for ${queuedCall.customerNumber ?? destination}.`
+        );
+        return;
+      } catch (error) {
+        setDialSyncState("fallback");
+        setDialSyncMessage(
+          error instanceof Error
+            ? `${error.message}. Falling back to direct softphone dial.`
+            : "Backend queue failed. Falling back to direct softphone dial."
+        );
+      }
+    }
+
+    try {
+      await client.dial(destination);
+      if (!apiBaseUrl.trim()) {
+        setDialSyncState("idle");
+        setDialSyncMessage("");
+      }
+    } catch (error) {
+      setDialSyncState("failed");
+      setDialSyncMessage(error instanceof Error ? error.message : "Unable to place call");
+    }
+  }
+
+  async function handleSaveWrapUp() {
     if (!selectedRecentCall) {
       return;
     }
 
-    client.saveRecentCallWrapUp(selectedRecentCall.id, {
+    const nextCall: CallSession = {
+      ...selectedRecentCall,
       disposition: draftDisposition || undefined,
       notes: draftNotes.trim() ? draftNotes.trim() : undefined,
       priority: scheduleActive ? draftPriority : undefined,
       followUpAt: scheduleActive ? parsedDraftFollowUpAt : undefined
+    };
+
+    client.saveRecentCallWrapUp(selectedRecentCall.id, {
+      disposition: nextCall.disposition,
+      notes: nextCall.notes,
+      priority: nextCall.priority,
+      followUpAt: nextCall.followUpAt
     });
+
+    if (!apiBaseUrl.trim()) {
+      setWrapUpSyncState("idle");
+      setWrapUpSyncMessage("");
+      return;
+    }
+
+    setWrapUpSyncState("syncing");
+    setWrapUpSyncMessage("Syncing wrap-up to Vantage Dialer...");
+
+    try {
+      const matchingBackendSession = findBackendSessionForCall(nextCall, [
+        backendCallSession,
+        ...backendSessionHistory
+      ]);
+      const wrapUpResponse = await saveWrapUp(apiBaseUrl, {
+        agentId: username,
+        call: nextCall,
+        callSessionId: matchingBackendSession?.callSessionId,
+        campaignId: matchingBackendSession?.campaignId ?? campaignId
+      });
+      const syncedSession: BackendCallSession = {
+        ...matchingBackendSession,
+        callSessionId: wrapUpResponse.callSessionId,
+        campaignId: wrapUpResponse.campaignId ?? matchingBackendSession?.campaignId ?? campaignId,
+        customerNumber: wrapUpResponse.customerNumber ?? nextCall.remoteIdentity,
+        agentId: wrapUpResponse.agentId ?? username,
+        status: nextCall.status,
+        lastEventType: "OPERATOR_WRAP_UP",
+        operatorDisposition: wrapUpResponse.disposition ?? nextCall.disposition,
+        operatorNotes: wrapUpResponse.notes ?? nextCall.notes,
+        operatorPriority: wrapUpResponse.priority ?? nextCall.priority,
+        followUpAt: normalizeApiTimestamp(wrapUpResponse.followUpAt),
+        wrapUpUpdatedAt: normalizeApiTimestamp(wrapUpResponse.wrapUpUpdatedAt) ?? new Date().toISOString()
+      };
+
+      setBackendSessionHistory((current) => upsertBackendSession(current, syncedSession));
+      if (matchingBackendSession?.callSessionId === backendCallSession?.callSessionId) {
+        setBackendCallSession(syncedSession);
+        setBackendCallMessage(formatBackendSessionSummary(syncedSession));
+      }
+      setWrapUpSyncState("synced");
+      setWrapUpSyncMessage("Wrap-up synced to the backend.");
+    } catch (error) {
+      setWrapUpSyncState("failed");
+      setWrapUpSyncMessage(
+        error instanceof Error ? error.message : "Wrap-up saved locally but backend sync failed."
+      );
+    }
   }
 
   function handleQuickSchedule(call: CallSession, followUpAt: number, priority?: CallPriority) {
@@ -1547,6 +1821,36 @@ export default function App() {
     }));
   }
 
+  async function handleRefreshBackendSession(callSessionId: string) {
+    if (!apiBaseUrl.trim()) {
+      return;
+    }
+
+    try {
+      const session = await fetchCallSession(apiBaseUrl, callSessionId);
+      setBackendCallSession(session);
+      setBackendSessionHistory((current) => upsertBackendSession(current, session));
+      setBackendCallMessage(formatBackendSessionSummary(session));
+      if (queuedCallSessionId === callSessionId) {
+        setBackendCallPolling(!isTerminalBackendSession(session));
+      }
+    } catch (error) {
+      setBackendCallMessage(
+        error instanceof Error ? error.message : "Unable to refresh backend call state"
+      );
+    }
+  }
+
+  function handleFocusBackendSession(session: BackendCallSession) {
+    setQueuedCallSessionId(session.callSessionId);
+    setBackendCallSession(session);
+    setBackendCallMessage(formatBackendSessionSummary(session));
+    setBackendCallPolling(!isTerminalBackendSession(session));
+    if (session.customerNumber) {
+      setDialNumber(normalizeDestination(session.customerNumber));
+    }
+  }
+
   return (
     <div className="page-shell">
       <div className="bg-grid" />
@@ -1565,6 +1869,13 @@ export default function App() {
             <p className="subcopy">
               Adapter mode:
               <code> {adapterMode} </code>
+              {agentUiMode ? (
+                <>
+                  {" "}
+                  Customer mode:
+                  <code> {agentUiMode} </code>
+                </>
+              ) : null}
             </p>
           </div>
           <div className={`status-pill ${snapshot.registrationState}`}>
@@ -1575,7 +1886,40 @@ export default function App() {
         <section className="grid-two">
           <form className="panel" onSubmit={handleRegister}>
             <h2>Agent Login</h2>
-            <p className="panel-copy">Connection defaults are saved locally on this browser.</p>
+            <p className="panel-copy">
+              Load customer defaults from the backend, then register with the agent SIP
+              credentials.
+            </p>
+            <div className="customer-config-grid">
+              <label>
+                API Base URL
+                <input value={apiBaseUrl} onChange={(event) => setApiBaseUrl(event.target.value)} />
+              </label>
+              <label>
+                Customer ID
+                <input value={customerId} onChange={(event) => setCustomerId(event.target.value)} />
+              </label>
+            </div>
+            <label>
+              Campaign ID
+              <input value={campaignId} onChange={(event) => setCampaignId(event.target.value)} />
+            </label>
+            <div className="button-row config-actions">
+              <button
+                type="button"
+                className="ghost"
+                onClick={() => {
+                  void handleLoadCustomerConfig();
+                }}
+                disabled={configLoadState === "loading" || !apiBaseUrl.trim() || !customerId.trim()}
+              >
+                {configLoadState === "loading" ? "Loading..." : "Load customer config"}
+              </button>
+              {customerName ? <span className="config-badge">{customerName}</span> : null}
+            </div>
+            {configLoadMessage ? (
+              <p className={`config-message ${configLoadState}`}>{configLoadMessage}</p>
+            ) : null}
             <label>
               SIP Domain
               <input value={sipServer} onChange={(event) => setSipServer(event.target.value)} />
@@ -1625,11 +1969,15 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => {
-                  void client.dial(normalizeDestination(dialNumber));
+                  void handleMakeCall();
                 }}
-                disabled={snapshot.registrationState !== "registered" || !dialNumber}
+                disabled={
+                  snapshot.registrationState !== "registered" ||
+                  !dialNumber ||
+                  dialSyncState === "queueing"
+                }
               >
-                Make Call
+                {dialSyncState === "queueing" ? "Queueing..." : "Make Call"}
               </button>
               <button
                 type="button"
@@ -1648,6 +1996,29 @@ export default function App() {
                 Backspace
               </button>
             </div>
+            {dialSyncMessage ? (
+              <p className={`config-message ${dialSyncState}`}>{dialSyncMessage}</p>
+            ) : null}
+            {queuedCallSessionId ? (
+              <div className="backend-call-card">
+                <div>
+                  <p className="contact-label">Backend session</p>
+                  <p className="backend-call-id">{queuedCallSessionId}</p>
+                </div>
+                <div>
+                  <p className="contact-label">Progress</p>
+                  <p className="backend-call-state">
+                    {backendCallMessage ||
+                      backendCallSession?.lastEventType ||
+                      backendCallSession?.status ||
+                      "Waiting for status"}
+                  </p>
+                </div>
+                <span className={`status-tag ${backendCallPolling ? "held" : "in_call"}`}>
+                  {backendCallPolling ? "polling" : "settled"}
+                </span>
+              </div>
+            ) : null}
             <div className="dial-grid">
               {["1", "2", "3", "4", "5", "6", "7", "8", "9", "*", "0", "#"].map((key) => (
                 <button
@@ -1681,6 +2052,14 @@ export default function App() {
             <span>Muted: {snapshot.currentCall?.muted ? "yes" : "no"}</span>
             <span>Held: {snapshot.currentCall?.held ? "yes" : "no"}</span>
           </div>
+
+          {backendCallSession ? (
+            <div className="backend-state-strip">
+              <span>Backend: {backendCallSession.status ?? "unknown"}</span>
+              <span>Event: {backendCallSession.lastEventType ?? "none yet"}</span>
+              <span>Campaign: {backendCallSession.campaignId ?? campaignId}</span>
+            </div>
+          ) : null}
 
           <div className="button-row wrap">
             <button
@@ -1735,6 +2114,86 @@ export default function App() {
 
           {snapshot.lastError ? <p className="error-text">{snapshot.lastError}</p> : null}
         </section>
+
+        {backendSessionHistory.length > 0 ? (
+          <section className="panel backend-history-panel">
+            <div className="section-head">
+              <div>
+                <h2>Backend Session History</h2>
+                <p className="panel-copy">
+                  Recent calls queued through the Vantage Dialer API stay visible here after polling settles.
+                </p>
+              </div>
+              <button
+                type="button"
+                className="ghost mini-button"
+                onClick={() => setBackendSessionHistory([])}
+              >
+                Clear sessions
+              </button>
+            </div>
+            <div className="backend-history-list">
+              {backendSessionHistory.map((session) => (
+                <article
+                  key={`backend-session-${session.callSessionId}`}
+                  className={`backend-history-item${
+                    session.callSessionId === queuedCallSessionId ? " selected" : ""
+                  }`}
+                >
+                  <div>
+                    <p className="backend-call-id">{session.callSessionId}</p>
+                    <p className="history-meta">
+                      {session.customerNumber ?? "Unknown number"} / {session.campaignId ?? campaignId}
+                    </p>
+                  </div>
+                  <div className="backend-history-status">
+                    <span className="status-tag in_call">
+                      {(session.lastEventType ?? session.status ?? "queued").replace(/_/g, " ")}
+                    </span>
+                    {session.wrapUpUpdatedAt ? (
+                      <span className="status-tag wrap-up">wrap-up synced</span>
+                    ) : null}
+                  </div>
+                  <div className="history-buttons">
+                    <button
+                      type="button"
+                      className="ghost mini-button"
+                      onClick={() => handleFocusBackendSession(session)}
+                    >
+                      Focus
+                    </button>
+                    <button
+                      type="button"
+                      className="ghost mini-button"
+                      onClick={() => {
+                        void handleRefreshBackendSession(session.callSessionId);
+                      }}
+                    >
+                      Refresh
+                    </button>
+                    <button
+                      type="button"
+                      className="ghost mini-button"
+                      onClick={() =>
+                        void handleCopyBrief(
+                          `backend-session-${session.callSessionId}`,
+                          buildBackendSessionBrief(session, campaignId)
+                        )
+                      }
+                    >
+                      Copy
+                    </button>
+                  </div>
+                  {briefFeedback?.key === `backend-session-${session.callSessionId}` ? (
+                    <p className={`brief-feedback backend-copy-feedback ${briefFeedback.tone}`}>
+                      {briefFeedback.message}
+                    </p>
+                  ) : null}
+                </article>
+              ))}
+            </div>
+          </section>
+        ) : null}
 
         <section className="summary-grid">
           <article className="summary-card emphasis">
@@ -3098,8 +3557,14 @@ export default function App() {
                   </label>
 
                   <div className="button-row">
-                    <button type="button" onClick={handleSaveWrapUp} disabled={!hasWrapUpChanges}>
-                      Save Wrap-Up
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void handleSaveWrapUp();
+                      }}
+                      disabled={!hasWrapUpChanges || wrapUpSyncState === "syncing"}
+                    >
+                      {wrapUpSyncState === "syncing" ? "Saving..." : "Save Wrap-Up"}
                     </button>
                     <button
                       type="button"
@@ -3125,6 +3590,9 @@ export default function App() {
                       Reset
                     </button>
                   </div>
+                  {wrapUpSyncMessage ? (
+                    <p className={`config-message ${wrapUpSyncState}`}>{wrapUpSyncMessage}</p>
+                  ) : null}
                   {!scheduleActive && (selectedRecentCall?.followUpAt || selectedRecentCall?.priority) ? (
                     <p className="schedule-copy">
                       Saving a non-follow-up disposition will clear the existing callback schedule.

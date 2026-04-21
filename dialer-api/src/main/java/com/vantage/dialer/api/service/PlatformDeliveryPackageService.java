@@ -9,6 +9,7 @@ import com.vantage.dialer.api.dto.PlatformDeliveryPackageExportResponse;
 import com.vantage.dialer.api.dto.PlatformDeliveryPackageResponse;
 import com.vantage.dialer.api.dto.PlatformWorkspaceResponse;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
@@ -33,6 +34,7 @@ public class PlatformDeliveryPackageService {
     public PlatformDeliveryPackageService(PlatformControlCenterService platformControlCenterService,
                                           PlatformWorkspaceService platformWorkspaceService,
                                           PlatformHealthService platformHealthService,
+                                          @Lazy
                                           PlatformArtifactCatalogService platformArtifactCatalogService,
                                           ObjectMapper objectMapper,
                                           @Value("${app.exports.directory:./exports}") String exportDirectory) {

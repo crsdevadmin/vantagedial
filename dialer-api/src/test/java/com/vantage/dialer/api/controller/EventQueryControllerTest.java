@@ -2,6 +2,8 @@ package com.vantage.dialer.api.controller;
 
 import com.vantage.dialer.api.dto.CallSessionResponse;
 import com.vantage.dialer.api.dto.CallTimelineBundleResponse;
+import com.vantage.dialer.api.dto.OperatorWrapUpRequest;
+import com.vantage.dialer.api.dto.OperatorWrapUpResponse;
 import com.vantage.dialer.api.service.CallSessionService;
 import com.vantage.dialer.api.service.ReportingService;
 import com.vantage.dialer.api.store.EventStore;
@@ -15,10 +17,17 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentCaptor.forClass;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.springframework.http.MediaType.APPLICATION_JSON;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -90,6 +99,66 @@ class EventQueryControllerTest {
 
         mockMvc.perform(get("/outbound/sessions/missing"))
                 .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void wrapUpEndpointReturnsCampaignAndOperatorFields() throws Exception {
+        EventStore eventStore = mock(EventStore.class);
+        ReportingService reportingService = mock(ReportingService.class);
+        CallSessionService callSessionService = mock(CallSessionService.class);
+        MockMvc mockMvc = ControllerTestSupport.mockMvc(new EventQueryController(eventStore, reportingService, callSessionService));
+
+        when(callSessionService.saveOperatorWrapUp(eq("session-4"), any())).thenReturn(
+                new OperatorWrapUpResponse(
+                        "session-4",
+                        "softphone-campaign",
+                        "+15551234567",
+                        "1001",
+                        "callback",
+                        "Smoke test wrap-up sync",
+                        "high",
+                        Instant.parse("2026-04-20T10:00:00Z"),
+                        Instant.parse("2026-04-20T09:05:00Z")
+                )
+        );
+
+        mockMvc.perform(put("/outbound/sessions/session-4/wrap-up")
+                        .contentType(APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "campaignId":"softphone-campaign",
+                                  "customerNumber":"+15551234567",
+                                  "agentId":"1001",
+                                  "callStatus":"ended",
+                                  "disposition":"callback",
+                                  "notes":"Smoke test wrap-up sync",
+                                  "priority":"high",
+                                  "followUpAt":"2026-04-20T10:00:00Z"
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.callSessionId").value("session-4"))
+                .andExpect(jsonPath("$.campaignId").value("softphone-campaign"))
+                .andExpect(jsonPath("$.customerNumber").value("+15551234567"))
+                .andExpect(jsonPath("$.agentId").value("1001"))
+                .andExpect(jsonPath("$.disposition").value("callback"))
+                .andExpect(jsonPath("$.notes").value("Smoke test wrap-up sync"))
+                .andExpect(jsonPath("$.priority").value("high"))
+                .andExpect(jsonPath("$.followUpAt").value("2026-04-20T10:00:00Z"))
+                .andExpect(jsonPath("$.wrapUpUpdatedAt").value("2026-04-20T09:05:00Z"));
+
+        var requestCaptor = forClass(OperatorWrapUpRequest.class);
+        verify(callSessionService).saveOperatorWrapUp(eq("session-4"), requestCaptor.capture());
+        OperatorWrapUpRequest capturedRequest = requestCaptor.getValue();
+
+        assertEquals("softphone-campaign", capturedRequest.getCampaignId());
+        assertEquals("+15551234567", capturedRequest.getCustomerNumber());
+        assertEquals("1001", capturedRequest.getAgentId());
+        assertEquals("ended", capturedRequest.getCallStatus());
+        assertEquals("callback", capturedRequest.getDisposition());
+        assertEquals("Smoke test wrap-up sync", capturedRequest.getNotes());
+        assertEquals("high", capturedRequest.getPriority());
+        assertEquals(Instant.parse("2026-04-20T10:00:00Z"), capturedRequest.getFollowUpAt());
     }
 
     private StandardEvent event(String eventId, EventType eventType) {

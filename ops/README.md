@@ -31,6 +31,61 @@ This starts:
 
 Only Asterisk stays on a separate host in the 2-server topology.
 
+## Softphone integration smoke
+
+After `dialer-api` is running, use the smoke workflow to seed a sample customer
+and agent, queue an agent-assisted outbound call, poll the backend session, save
+operator wrap-up, and verify the campaign, wrap-up fields, and wrap-up timestamp
+fields round-trip:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File ops\smoke\softphone-integration-smoke.ps1
+```
+
+To preview the exact API calls without requiring the API to be running:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File ops\smoke\softphone-integration-smoke.ps1 -PlanOnly
+```
+
+Plan-only mode also prints the planned wrap-up JSON body, including campaign,
+priority, notes, and follow-up fields. Live mode validates both the immediate
+wrap-up `PUT` response and the follow-up session `GET`.
+When searching these docs from PowerShell, prefer single-quoted `rg` patterns if
+the text contains Markdown backticks; double-quoted patterns can be parsed as
+PowerShell escape sequences.
+
+For a local smoke run without PostgreSQL or Kafka, start `dialer-api` from the
+`dialer-api` module with the test classpath, an H2 datasource, and optional
+Kafka command publishing:
+
+```powershell
+$env:SPRING_DATASOURCE_URL = "jdbc:h2:mem:vantagedial_smoke;MODE=PostgreSQL;DB_CLOSE_DELAY=-1"
+$env:SPRING_DATASOURCE_DRIVER_CLASS_NAME = "org.h2.Driver"
+$env:SPRING_DATASOURCE_USERNAME = "sa"
+$env:SPRING_DATASOURCE_PASSWORD = ""
+$env:SPRING_JPA_HIBERNATE_DDL_AUTO = "create-drop"
+$env:APP_KAFKA_COMMAND_PUBLISH_REQUIRED = "false"
+$env:SPRING_KAFKA_PRODUCER_PROPERTIES_MAX_BLOCK_MS = "1000"
+cd dialer-api
+mvn spring-boot:run -Dspring-boot.run.useTestClasspath=true
+```
+
+In another shell, run the smoke command from the repo root. This mode validates
+API session persistence and operator wrap-up sync while allowing the command
+publish to be skipped when no local Kafka broker is listening.
+
+Useful overrides:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File ops\smoke\softphone-integration-smoke.ps1 `
+  -ApiBaseUrl http://localhost:8081 `
+  -CustomerId customer-a `
+  -CampaignId softphone-console `
+  -AgentId 1001 `
+  -Destination +15551234567
+```
+
 ## Agent provisioning by curl
 
 Create an agent:

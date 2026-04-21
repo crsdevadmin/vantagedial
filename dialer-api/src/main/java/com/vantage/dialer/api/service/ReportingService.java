@@ -121,7 +121,12 @@ public class ReportingService {
                         entity.getStatus(),
                         entity.getLastEventType(),
                         entity.getLastEventAt(),
-                        entity.getCreatedAt()))
+                        entity.getCreatedAt(),
+                        entity.getOperatorDisposition(),
+                        entity.getOperatorNotes(),
+                        entity.getOperatorPriority(),
+                        entity.getFollowUpAt(),
+                        entity.getWrapUpUpdatedAt()))
                 .toList();
         long completed = sessions.stream().filter(s -> "CALL_COMPLETED".equals(s.lastEventType())).count();
         long failed = sessions.stream().filter(s -> "CALL_FAILED".equals(s.lastEventType())).count();
@@ -209,7 +214,12 @@ public class ReportingService {
                         entity.getStatus(),
                         entity.getLastEventType(),
                         entity.getLastEventAt(),
-                        entity.getCreatedAt()))
+                        entity.getCreatedAt(),
+                        entity.getOperatorDisposition(),
+                        entity.getOperatorNotes(),
+                        entity.getOperatorPriority(),
+                        entity.getFollowUpAt(),
+                        entity.getWrapUpUpdatedAt()))
                 .filter(session -> "OUTBOUND_IVR".equals(session.callMode()))
                 .toList();
 
